@@ -195,7 +195,7 @@ export default function DailyTracker() {
   }
 
   return (
-    <>
+    <div className="max-w-md mx-auto w-full flex flex-col flex-1">
       {/* Header */}
       <Header moduleName={activeModule?.name} date={selectedDate} />
 
@@ -230,6 +230,6 @@ export default function DailyTracker() {
       {students.length > 0 && (
         <SaveButton saving={saving} saved={saved} onClick={handleSave} />
       )}
-    </>
+    </div>
   )
 }

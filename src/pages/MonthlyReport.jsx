@@ -214,23 +214,24 @@ export default function MonthlyReport() {
           No students enrolled.
         </p>
       ) : (
-        <div className="flex-1 mx-4 mb-4 overflow-auto rounded-2xl border border-gray-100 shadow-sm bg-white">
-          <table className="border-collapse w-max min-w-full text-sm">
+        <div className="flex-1 mx-4 mb-4 overflow-x-auto rounded-2xl border border-gray-100 shadow-sm bg-white">
+          <table className="border-collapse w-full text-sm" style={{ minWidth: `${140 + daysInMonth * 38}px` }}>
             <thead>
               <tr>
                 {/* Sticky student name header */}
                 <th
-                  className="sticky left-0 z-20 bg-gray-50 px-4 py-3 text-left text-xs
+                  className="sticky left-0 z-20 bg-gray-50 px-3 py-3 text-left text-xs
                              font-semibold text-gray-500 uppercase tracking-wide
-                             border-b border-r border-gray-100 min-w-[140px]"
+                             border-b border-r border-gray-100"
+                  style={{ width: '140px', minWidth: '140px' }}
                 >
                   Student
                 </th>
                 {days.map((day) => (
                   <th
                     key={day}
-                    className="px-2 py-3 text-center border-b border-gray-100
-                               text-xs font-medium text-gray-400 min-w-[40px]"
+                    className="px-0.5 py-3 text-center border-b border-gray-100
+                               text-xs font-medium text-gray-400"
                   >
                     <span className="block">{day}</span>
                     <span className="block text-[10px] text-gray-300">
@@ -245,9 +246,10 @@ export default function MonthlyReport() {
                 <tr key={student.id} className="hover:bg-gray-50/50">
                   {/* Sticky student name cell */}
                   <td
-                    className="sticky left-0 z-10 bg-white px-4 py-2.5 font-medium
+                    className="sticky left-0 z-10 bg-white px-3 py-2 font-medium
                                text-gray-700 border-b border-r border-gray-100
                                whitespace-nowrap"
+                    style={{ width: '140px', minWidth: '140px' }}
                   >
                     {student.name}
                   </td>
@@ -257,18 +259,18 @@ export default function MonthlyReport() {
                     return (
                       <td
                         key={day}
-                        className="px-1 py-2.5 text-center border-b border-gray-100"
+                        className="px-0.5 py-2 text-center border-b border-gray-100"
                       >
                         {status === 'present' ? (
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-emerald-100 text-emerald-700 text-xs font-bold">
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-emerald-100 text-emerald-700 text-[11px] font-bold">
                             P
                           </span>
                         ) : status === 'absent' ? (
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-gray-200 text-gray-500 text-xs font-bold">
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-200 text-gray-500 text-[11px] font-bold">
                             A
                           </span>
                         ) : (
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-md text-gray-200 text-xs">
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded text-gray-200 text-[11px]">
                             –
                           </span>
                         )}

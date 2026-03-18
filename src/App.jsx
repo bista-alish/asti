@@ -8,7 +8,7 @@ import MonthlyReport from './pages/MonthlyReport'
  */
 export default function App() {
   return (
-    <div className="max-w-4xl mx-auto min-h-screen flex flex-col">
+    <div className="mx-auto min-h-screen flex flex-col">
       {/* Main content area */}
       <div className="flex-1 flex flex-col pb-20">
         <Routes>
