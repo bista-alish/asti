@@ -1,6 +1,7 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
 import DailyTracker from './pages/DailyTracker'
 import MonthlyReport from './pages/MonthlyReport'
+import StudentReport from './pages/StudentReport'
 import Setup from './pages/Setup'
 
 /**
@@ -15,6 +16,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DailyTracker />} />
           <Route path="/report" element={<MonthlyReport />} />
+          <Route path="/student" element={<StudentReport />} />
           <Route path="/setup" element={<Setup />} />
         </Routes>
       </div>
@@ -77,6 +79,30 @@ export default function App() {
               />
             </svg>
             Report
+          </NavLink>
+          
+          <NavLink
+            to="/student"
+            className={({ isActive }) =>
+              `flex flex-col items-center gap-1 text-xs font-medium transition-colors ${
+                isActive
+                  ? 'text-emerald-600'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`
+            }
+          >
+            {/* Person icon */}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="w-5 h-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            Student
           </NavLink>
 
           <NavLink
