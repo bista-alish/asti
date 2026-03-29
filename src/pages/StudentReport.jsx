@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
-import * as XLSX from 'xlsx'
+import XLSXStyle from 'xlsx-js-style'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -94,34 +94,75 @@ export default function StudentReport() {
   const exportXLSX = () => {
     if (filteredRecords.length === 0) return
 
-    // Layout:
-    //  Row 1  — "Attendance Report"
-    //  Row 2  — empty
-    //  Row 3  — "Student Name:" | <name>
-    //  Row 4  — empty
-    //  Row 5  — table headers  (autofilter here)
-    //  Row 6+ — data
-    const headerRow  = 5                          // 1-indexed row for column headers
-    const lastRow    = headerRow + filteredRecords.length  // last data row (1-indexed)
+    // Colour constants
+    const EMERALD  = '059669'   // header bg
+    const STRIPE   = 'F0FDF4'   // alternate row bg
+    const TITLE_FG = '064E3B'   // dark emerald for title text
+    const BORDER   = { style: 'thin', color: { rgb: 'D1FAE5' } }
+    const allBorders = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER }
 
-    const sheetData = [
-      ['Attendance Report'],
-      [],
-      ['Student Name:', studentName],
-      [],
-      ['Date', 'Module', 'Attendance'],
-      ...filteredRecords.map(r => [formatDate(r.date), r.module, r.status]),
-    ]
+    // Helper to make a styled cell
+    const cell = (v, s) => ({ v, s })
 
-    const ws = XLSX.utils.aoa_to_sheet(sheetData)
-    ws['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 16 }]
+    // Row offsets (1-indexed)
+    const DATA_START = 6   // first actual data row
+    const rows = filteredRecords
 
-    // Autofilter on the header + data range  → gives Excel-table–style filter arrows
-    ws['!autofilter'] = { ref: `A${headerRow}:C${lastRow}` }
+    const ws = {}
 
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Attendance')
-    XLSX.writeFile(wb, `${studentName}_Attendance.xlsx`)
+    // Row 1 — Title
+    ws['A1'] = cell('Attendance Report', {
+      font: { bold: true, sz: 16, color: { rgb: TITLE_FG } },
+      alignment: { vertical: 'center' },
+    })
+
+    // Row 2 — empty, Row 4 — empty (handled by leaving cells unset)
+
+    // Row 3 — Student Name label + value
+    ws['A3'] = cell('Student Name:', { font: { bold: true, sz: 11 } })
+    ws['B3'] = cell(studentName,     { font: { sz: 11 } })
+
+    // Row 5 — Header row with emerald background
+    const headers = ['Date', 'Module', 'Attendance']
+    const cols    = ['A', 'B', 'C']
+    headers.forEach((h, ci) => {
+      ws[`${cols[ci]}5`] = cell(h, {
+        font:      { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
+        fill:      { fgColor: { rgb: EMERALD } },
+        alignment: { horizontal: ci === 2 ? 'center' : 'left', vertical: 'center' },
+        border:    allBorders,
+      })
+    })
+
+    // Rows 6+ — data with alternating shading
+    rows.forEach((r, ri) => {
+      const excelRow  = DATA_START + ri
+      const isStripe  = ri % 2 === 1
+      const status    = r.status.charAt(0).toUpperCase() + r.status.slice(1)
+      const rowBg     = isStripe ? STRIPE : 'FFFFFF'
+
+      const baseStyle = (align = 'left') => ({
+        fill:      { fgColor: { rgb: rowBg } },
+        alignment: { horizontal: align, vertical: 'center' },
+        border:    allBorders,
+        font:      { sz: 10 },
+      })
+
+      ws[`A${excelRow}`] = cell(formatDate(r.date), baseStyle())
+      ws[`B${excelRow}`] = cell(r.module,            baseStyle())
+      ws[`C${excelRow}`] = cell(status,              baseStyle('center'))
+    })
+
+    // Sheet range
+    const lastRow = DATA_START + rows.length - 1
+    ws['!ref']      = `A1:C${lastRow}`
+    ws['!cols']     = [{ wch: 20 }, { wch: 32 }, { wch: 16 }]
+    ws['!rows']     = [{ hpt: 22 }, {}, { hpt: 18 }, {}, { hpt: 20 }]
+    ws['!autofilter'] = { ref: `A5:C${lastRow}` }
+
+    const wb = XLSXStyle.utils.book_new()
+    XLSXStyle.utils.book_append_sheet(wb, ws, 'Attendance')
+    XLSXStyle.writeFile(wb, `${studentName}_Attendance.xlsx`)
   }
 
   // ── PDF export ─────────────────────────────────────
@@ -134,10 +175,14 @@ export default function StudentReport() {
 
     // Generate table (table starts below the per-page header)
     autoTable(doc, {
-      startY: 22,
-      margin: { top: 22 },        // leave room for the running header
+      startY: 24,
+      margin: { top: 24 },        // leave room for the running header
       head: [['Date', 'Module', 'Attendance']],
-      body: filteredRecords.map(r => [formatDate(r.date), r.module, r.status]),
+      body: filteredRecords.map(r => [
+        formatDate(r.date),
+        r.module,
+        r.status.charAt(0).toUpperCase() + r.status.slice(1),
+      ]),
       styles: { fontSize: 10, cellPadding: 4 },
       headStyles: { fillColor: [16, 185, 129], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [240, 253, 244] },
@@ -159,14 +204,14 @@ export default function StudentReport() {
       doc.setTextColor(30)
       doc.text(studentName, 14, 10)
 
-      doc.setFontSize(8)
+      doc.setFontSize(11)
       doc.setFont('helvetica', 'normal')
       doc.setTextColor(120)
-      doc.text('Attendance Report', 14, 16)
+      doc.text('Attendance Report', 14, 17)
 
       // Thin rule under the header
       doc.setDrawColor(200)
-      doc.line(14, 18, pageW - 14, 18)
+      doc.line(14, 20, pageW - 14, 20)
 
       // ── Footer: Page X of Y ───────────────────────────
       doc.setFontSize(8)
