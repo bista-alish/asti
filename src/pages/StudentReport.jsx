@@ -94,18 +94,30 @@ export default function StudentReport() {
   const exportXLSX = () => {
     if (filteredRecords.length === 0) return
 
-    // Build rows: title row, blank, headers, data
-    const data = [
-      [studentName],            // A1 — student name
-      [],                       // blank row
+    // Layout:
+    //  Row 1  — "Attendance Report"
+    //  Row 2  — empty
+    //  Row 3  — "Student Name:" | <name>
+    //  Row 4  — empty
+    //  Row 5  — table headers  (autofilter here)
+    //  Row 6+ — data
+    const headerRow  = 5                          // 1-indexed row for column headers
+    const lastRow    = headerRow + filteredRecords.length  // last data row (1-indexed)
+
+    const sheetData = [
+      ['Attendance Report'],
+      [],
+      ['Student Name:', studentName],
+      [],
       ['Date', 'Module', 'Attendance'],
       ...filteredRecords.map(r => [formatDate(r.date), r.module, r.status]),
     ]
 
-    const ws = XLSX.utils.aoa_to_sheet(data)
+    const ws = XLSX.utils.aoa_to_sheet(sheetData)
+    ws['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 16 }]
 
-    // Style the title cell bold + larger (limited styling without xlsx-style)
-    ws['!cols'] = [{ wch: 18 }, { wch: 30 }, { wch: 14 }]
+    // Autofilter on the header + data range  → gives Excel-table–style filter arrows
+    ws['!autofilter'] = { ref: `A${headerRow}:C${lastRow}` }
 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Attendance')
@@ -117,20 +129,13 @@ export default function StudentReport() {
     if (filteredRecords.length === 0) return
 
     const doc = new jsPDF()
+    const pageW = doc.internal.pageSize.getWidth()
+    const pageH = doc.internal.pageSize.getHeight()
 
-    // Title
-    doc.setFontSize(16)
-    doc.setFont('helvetica', 'bold')
-    doc.text(studentName, 14, 18)
-
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(120)
-    doc.text('Attendance Report', 14, 26)
-    doc.setTextColor(0)
-
+    // Generate table (table starts below the per-page header)
     autoTable(doc, {
-      startY: 32,
+      startY: 22,
+      margin: { top: 22 },        // leave room for the running header
       head: [['Date', 'Module', 'Attendance']],
       body: filteredRecords.map(r => [formatDate(r.date), r.module, r.status]),
       styles: { fontSize: 10, cellPadding: 4 },
@@ -142,6 +147,35 @@ export default function StudentReport() {
         2: { cellWidth: 30, halign: 'center' },
       },
     })
+
+    // Two-pass: now we know the total page count — stamp header + footer on every page
+    const totalPages = doc.internal.getNumberOfPages()
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i)
+
+      // ── Per-page header ──────────────────────────────
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(30)
+      doc.text(studentName, 14, 10)
+
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(120)
+      doc.text('Attendance Report', 14, 16)
+
+      // Thin rule under the header
+      doc.setDrawColor(200)
+      doc.line(14, 18, pageW - 14, 18)
+
+      // ── Footer: Page X of Y ───────────────────────────
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(150)
+      doc.text(`Page ${i} of ${totalPages}`, pageW / 2, pageH - 6, { align: 'center' })
+
+      doc.setTextColor(0)
+    }
 
     doc.save(`${studentName}_Attendance.pdf`)
   }
