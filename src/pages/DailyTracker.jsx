@@ -4,12 +4,46 @@ import Header from '../components/Header'
 import OverridePanel from '../components/OverridePanel'
 import StudentRow from '../components/StudentRow'
 import SaveButton from '../components/SaveButton'
+import { useAuth } from '../contexts/AuthContext'
+import { useVoiceInput } from '../hooks/useVoiceInput'
+import { sendChatMessage } from '../lib/chat'
 
 /**
  * DailyTracker — main view for marking daily attendance.
  * (Previously the App component logic.)
  */
 export default function DailyTracker() {
+  const { profile } = useAuth()
+  const canWrite = profile?.role === 'admin' || profile?.role === 'instructor'
+
+  const [voiceStatus, setVoiceStatus] = useState(null) // null | 'listening' | 'processing' | 'done' | 'error'
+  const [voiceMessage, setVoiceMessage] = useState('')
+
+  const { isSupported: voiceSupported, isListening, startListening, stopListening } = useVoiceInput({
+    onResult: () => {},
+    onFinalResult: async (transcript) => {
+      if (!transcript.trim()) return
+      setVoiceStatus('processing')
+      setVoiceMessage(`"${transcript}"`)
+      try {
+        const context = `The current module is "${activeModule?.name}" and today's date is ${selectedDate}. ` +
+          `Process this attendance command: ${transcript}`
+        const response = await sendChatMessage([{ role: 'user', content: context }])
+        setVoiceMessage(response.message)
+        setVoiceStatus('done')
+        // Refresh attendance data if changes were made
+        const mutationTools = ['mark_attendance', 'mark_bulk_attendance']
+        if (response.tool_calls?.some(tc => mutationTools.includes(tc.tool))) {
+          await fetchStudentsAndAttendance()
+        }
+      } catch {
+        setVoiceStatus('error')
+        setVoiceMessage('Voice command failed. Please try again.')
+      }
+      setTimeout(() => { setVoiceStatus(null); setVoiceMessage('') }, 4000)
+    },
+  })
+
   // ── State ─────────────────────────────────────────────
   const [modules, setModules] = useState([])
   const [activeModule, setActiveModule] = useState(null)
@@ -112,6 +146,12 @@ export default function DailyTracker() {
 
   useEffect(() => {
     fetchStudentsAndAttendance()
+  }, [fetchStudentsAndAttendance])
+
+  // Refresh when chatbot modifies data
+  useEffect(() => {
+    window.addEventListener('asti:data-changed', fetchStudentsAndAttendance)
+    return () => window.removeEventListener('asti:data-changed', fetchStudentsAndAttendance)
   }, [fetchStudentsAndAttendance])
 
   // ── Handlers ──────────────────────────────────────────
@@ -226,9 +266,52 @@ export default function DailyTracker() {
         )}
       </div>
 
-      {/* Save button */}
-      {students.length > 0 && (
-        <SaveButton saving={saving} saved={saved} onClick={handleSave} />
+      {/* Voice status feedback */}
+      {voiceStatus && (
+        <div className={`mx-4 mb-2 px-3 py-2 rounded-xl text-sm ${
+          voiceStatus === 'error'
+            ? 'bg-red-50 text-red-600'
+            : voiceStatus === 'done'
+            ? 'bg-emerald-50 text-emerald-700'
+            : 'bg-blue-50 text-blue-600'
+        }`}>
+          {voiceStatus === 'listening' && '🎙 Listening…'}
+          {voiceStatus === 'processing' && `⏳ Processing: ${voiceMessage}`}
+          {voiceStatus === 'done' && voiceMessage}
+          {voiceStatus === 'error' && voiceMessage}
+        </div>
+      )}
+
+      {/* Action row: Voice button + Save button */}
+      {students.length > 0 && canWrite && (
+        <div className="px-6 pb-6 pt-0 flex items-center gap-2">
+          {voiceSupported && (
+            <button
+              onClick={isListening ? stopListening : () => { setVoiceStatus('listening'); startListening() }}
+              className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                isListening
+                  ? 'bg-red-500 text-white animate-pulse'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+              aria-label={isListening ? 'Stop voice command' : 'Start voice command'}
+              title="Voice attendance command"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all duration-300 cursor-pointer
+               disabled:opacity-50 disabled:cursor-not-allowed
+               bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]
+               shadow-md shadow-emerald-200"
+          >
+            {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save Attendance'}
+          </button>
+        </div>
       )}
     </div>
   )

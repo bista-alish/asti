@@ -1,0 +1,2 @@
+-- This migration was applied directly on the remote database.
+-- Placeholder to align local migration history.

@@ -3,26 +3,44 @@ import DailyTracker from './pages/DailyTracker'
 import MonthlyReport from './pages/MonthlyReport'
 import StudentReport from './pages/StudentReport'
 import Setup from './pages/Setup'
+import Login from './pages/Login'
+import ProtectedRoute from './components/ProtectedRoute'
+import UserMenu from './components/UserMenu'
+import ChatPanel from './components/ChatPanel'
 
-/**
- * App — layout wrapper with bottom navigation between
- * Daily Tracker and Monthly Report pages.
- */
 export default function App() {
   return (
     <div className="mx-auto min-h-screen flex flex-col">
       {/* Main content area */}
       <div className="flex-1 flex flex-col pb-20">
         <Routes>
-          <Route path="/" element={<DailyTracker />} />
-          <Route path="/report" element={<MonthlyReport />} />
-          <Route path="/student" element={<StudentReport />} />
-          <Route path="/setup" element={<Setup />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={
+            <ProtectedRoute>
+              <DailyTracker />
+            </ProtectedRoute>
+          } />
+          <Route path="/report" element={
+            <ProtectedRoute>
+              <MonthlyReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/student" element={
+            <ProtectedRoute>
+              <StudentReport />
+            </ProtectedRoute>
+          } />
+          <Route path="/setup" element={
+            <ProtectedRoute requiredRole="instructor">
+              <Setup />
+            </ProtectedRoute>
+          } />
         </Routes>
       </div>
 
       {/* ── Bottom navigation ────────────────────────── */}
-      <nav className="sticky bottom-0 bg-white border-t border-gray-100 shadow-sm">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-sm z-40">
+        <UserMenu />
         <div className="flex justify-around py-3">
           <NavLink
             to="/"
@@ -80,7 +98,7 @@ export default function App() {
             </svg>
             Report
           </NavLink>
-          
+
           <NavLink
             to="/student"
             className={({ isActive }) =>
@@ -115,7 +133,7 @@ export default function App() {
               }`
             }
           >
-            {/* Setup / People icon */}
+            {/* Setup / Cog icon */}
             <svg
               xmlns="http://www.w3.org/2000/svg"
               className="w-5 h-5"
@@ -131,6 +149,9 @@ export default function App() {
           </NavLink>
         </div>
       </nav>
+
+      {/* Chat panel — persists across all pages */}
+      <ChatPanel />
     </div>
   )
 }
