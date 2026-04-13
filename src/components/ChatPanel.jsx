@@ -63,7 +63,7 @@ export default function ChatPanel() {
       {/* Floating action button */}
       <button
         onClick={() => setIsOpen(o => !o)}
-        className="fixed bottom-28 right-4 z-50 w-12 h-12 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
+        className="fixed bottom-36 right-4 z-50 w-12 h-12 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
         aria-label="Open AI assistant"
       >
         {isOpen ? (

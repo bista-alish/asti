@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai'
+import { GoogleGenerativeAI } from 'npm:@google/generative-ai@0.21.0'
 import { corsHeaders, handleCors } from '../_shared/cors.ts'
 import { requireAuth } from '../_shared/auth.ts'
 import { createAdminClient } from '../_shared/supabase-admin.ts'

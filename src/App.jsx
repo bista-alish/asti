@@ -12,7 +12,7 @@ export default function App() {
   return (
     <div className="mx-auto min-h-screen flex flex-col">
       {/* Main content area */}
-      <div className="flex-1 flex flex-col pb-20">
+      <div className="flex-1 flex flex-col pb-36">
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={
