@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
  * Shows a loading spinner while auth state is being determined.
  */
 export default function ProtectedRoute({ children, requiredRole }) {
-  const { session, profile, loading } = useAuth()
+  const { session, profile, loading, profileLoading } = useAuth()
 
   if (loading) {
     return (
@@ -22,6 +22,13 @@ export default function ProtectedRoute({ children, requiredRole }) {
   }
 
   if (requiredRole) {
+    if (profileLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <p className="text-gray-400 text-sm">Loading…</p>
+        </div>
+      )
+    }
     const hierarchy = { admin: 3, instructor: 2, viewer: 1 }
     const userLevel = hierarchy[profile?.role] ?? 0
     const requiredLevel = hierarchy[requiredRole] ?? 0

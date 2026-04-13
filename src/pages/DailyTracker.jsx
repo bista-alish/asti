@@ -13,7 +13,7 @@ import { sendChatMessage } from '../lib/chat'
  * (Previously the App component logic.)
  */
 export default function DailyTracker() {
-  const { profile } = useAuth()
+  const { profile, session } = useAuth()
   const canWrite = profile?.role === 'admin' || profile?.role === 'instructor'
 
   const [voiceStatus, setVoiceStatus] = useState(null) // null | 'listening' | 'processing' | 'done' | 'error'
@@ -28,7 +28,7 @@ export default function DailyTracker() {
       try {
         const context = `The current module is "${activeModule?.name}" and today's date is ${selectedDate}. ` +
           `Process this attendance command: ${transcript}`
-        const response = await sendChatMessage([{ role: 'user', content: context }])
+        const response = await sendChatMessage([{ role: 'user', content: context }], session?.access_token)
         setVoiceMessage(response.message)
         setVoiceStatus('done')
         // Refresh attendance data if changes were made
@@ -70,24 +70,17 @@ export default function DailyTracker() {
     async function init() {
       setLoading(true)
 
-      // Fetch all modules (for dropdown)
-      const { data: allModules } = await supabase
-        .from('modules')
-        .select('*')
-        .order('order_index')
-      setModules(allModules || [])
+      // Fetch modules and active intake in parallel
+      const [{ data: allModules }, { data: intakes }] = await Promise.all([
+        supabase.from('modules').select('*').order('order_index'),
+        supabase.from('intakes').select('*').eq('is_active', true).limit(1),
+      ])
 
-      // Current module
+      setModules(allModules || [])
+      setActiveIntake(intakes?.[0] || null)
+
       const current = allModules?.find((m) => m.is_current)
       setActiveModule(current || allModules?.[0] || null)
-
-      // Active intake
-      const { data: intakes } = await supabase
-        .from('intakes')
-        .select('*')
-        .eq('is_active', true)
-        .limit(1)
-      setActiveIntake(intakes?.[0] || null)
 
       setLoading(false)
     }
@@ -98,32 +91,30 @@ export default function DailyTracker() {
   const fetchStudentsAndAttendance = useCallback(async () => {
     if (!activeModule || !activeIntake) return
 
-    // Get enrolled students for this module who are active
-    const { data: enrolled } = await supabase
-      .from('enrollments')
-      .select('student_id, students!inner(id, name, is_active)')
-      .eq('module_id', activeModule.id)
-      .eq('students.is_active', true)
+    // Fetch enrolled students and existing session in parallel
+    const [{ data: enrolled }, { data: sessions }] = await Promise.all([
+      supabase
+        .from('enrollments')
+        .select('student_id, students!inner(id, name, is_active)')
+        .eq('module_id', activeModule.id)
+        .eq('students.is_active', true),
+      supabase
+        .from('sessions')
+        .select('id')
+        .eq('module_id', activeModule.id)
+        .eq('intake_id', activeIntake.id)
+        .eq('date', selectedDate)
+        .limit(1),
+    ])
 
     const studentList = enrolled?.map((e) => e.students) || []
-    // Sort alphabetically
     studentList.sort((a, b) => a.name.localeCompare(b.name))
     setStudents(studentList)
 
-    // Default all to absent
     const defaultAttendance = {}
     studentList.forEach((s) => {
       defaultAttendance[s.id] = 'absent'
     })
-
-    // Check for existing session
-    const { data: sessions } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('module_id', activeModule.id)
-      .eq('intake_id', activeIntake.id)
-      .eq('date', selectedDate)
-      .limit(1)
 
     const session = sessions?.[0]
     setExistingSessionId(session?.id || null)
@@ -248,8 +239,49 @@ export default function DailyTracker() {
         onDateChange={handleDateChange}
       />
 
+      {/* Summary bar + Mark All buttons */}
+      {students.length > 0 && (
+        <div className="mx-4 mb-2 flex items-center justify-between px-4 py-2 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="flex items-center gap-3 text-xs font-medium">
+            <span className="text-emerald-600">
+              Present: {Object.values(attendance).filter(s => s === 'present').length}
+            </span>
+            <span className="text-gray-300">|</span>
+            <span className="text-gray-500">
+              Absent: {Object.values(attendance).filter(s => s === 'absent').length}
+            </span>
+          </div>
+          {canWrite && (
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => {
+                  const all = {}
+                  students.forEach(s => { all[s.id] = 'present' })
+                  setAttendance(all)
+                  setSaved(false)
+                }}
+                className="text-xs px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-medium transition-colors"
+              >
+                All Present
+              </button>
+              <button
+                onClick={() => {
+                  const all = {}
+                  students.forEach(s => { all[s.id] = 'absent' })
+                  setAttendance(all)
+                  setSaved(false)
+                }}
+                className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 font-medium transition-colors"
+              >
+                All Absent
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Student list */}
-      <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 mx-4 mb-4 overflow-hidden">
+      <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 mx-4 mb-2 overflow-hidden">
         {students.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-8">
             No students enrolled.
@@ -282,9 +314,9 @@ export default function DailyTracker() {
         </div>
       )}
 
-      {/* Action row: Voice button + Save button */}
+      {/* Action row: Voice button + Save button — sticky above nav */}
       {students.length > 0 && canWrite && (
-        <div className="px-6 pb-6 pt-0 flex items-center gap-2">
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 flex items-center gap-2">
           {voiceSupported && (
             <button
               onClick={isListening ? stopListening : () => { setVoiceStatus('listening'); startListening() }}

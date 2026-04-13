@@ -2,7 +2,6 @@ import { useState } from 'react'
 
 /**
  * OverridePanel — collapsible section for changing module and date.
- * Hidden by default; toggled by a small "change" link.
  */
 export default function OverridePanel({
     modules,
@@ -15,18 +14,32 @@ export default function OverridePanel({
 
     return (
         <div className="px-6 pb-4 text-center">
-            {/* Toggle link */}
+            {/* Toggle button */}
             <button
                 onClick={() => setOpen(!open)}
-                className="text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
             >
-                {open ? 'hide' : 'change'}
+                {/* Pencil icon */}
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-1.414A2 2 0 019.586 13z" />
+                </svg>
+                Change
+                {/* Chevron */}
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className={`w-3 h-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
             </button>
 
             {/* Expandable override controls */}
             <div
-                className={`overflow-hidden transition-all duration-300 ease-in-out ${open ? 'max-h-40 opacity-100 mt-3' : 'max-h-0 opacity-0'
-                    }`}
+                className={`overflow-hidden transition-all duration-300 ease-in-out ${open ? 'max-h-40 opacity-100 mt-3' : 'max-h-0 opacity-0'}`}
             >
                 <div className="flex items-center justify-center gap-4">
                     {/* Module dropdown */}

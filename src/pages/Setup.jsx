@@ -212,7 +212,7 @@ export default function Setup() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto w-full p-4 md:p-8 pb-32 flex flex-col gap-8 flex-1">
+    <div className={`max-w-6xl mx-auto w-full p-4 md:p-8 flex flex-col gap-8 flex-1 ${hasChanges ? 'pb-60' : 'pb-32'}`}>
       {/* ── HEADER & MODULE SETUP ── */}
       <section className="flex flex-col gap-6">
         <header>
@@ -275,7 +275,7 @@ export default function Setup() {
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
         
         {/* ENROLLED STUDENTS (LEFT COLUMN) */}
-        <div className="flex flex-col min-h-0 bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex-1">
+        <div className="flex flex-col min-h-0 bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex-1 self-start">
            <div className="bg-emerald-50 px-5 py-4 border-b border-emerald-100 shrink-0">
             <h3 className="font-semibold text-emerald-900 text-sm flex justify-between items-center">
               Enrolled in Module
@@ -299,7 +299,7 @@ export default function Setup() {
                <div className="p-8 text-center text-sm text-gray-400 italic">No students are currently enrolled.</div>
              )}
           </div>
-          <div className="p-4 border-t border-gray-100 shrink-0 bg-white mt-auto">
+          <div className="p-4 border-t border-gray-100 shrink-0 bg-white">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Create & Enroll</p>
             <form onSubmit={handleAddNewStudent} className="flex gap-2">
               <input
@@ -366,7 +366,7 @@ export default function Setup() {
 
       {/* ── STICKY SAVE BAR ── */}
       {hasChanges && (
-        <div className="fixed bottom-[74px] left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] px-4 py-3 z-30 transition-all duration-300">
+        <div className="fixed bottom-[108px] left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] px-4 py-3 z-50 transition-all duration-300">
           <div className="mx-auto max-w-6xl flex items-center justify-between">
             <div className="flex flex-col">
                <span className="text-sm font-semibold text-gray-800">Unsaved Enrollments</span>

@@ -1,11 +1,13 @@
 import { useState, useCallback } from 'react'
 import { sendChatMessage } from '../lib/chat'
+import { useAuth } from '../contexts/AuthContext'
 
 /**
  * Manages the chatbot conversation state.
  * Returns messages, loading state, and a sendMessage function.
  */
 export function useChat() {
+  const { session } = useAuth()
   const [messages, setMessages] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -21,7 +23,7 @@ export function useChat() {
     setError(null)
 
     try {
-      const response = await sendChatMessage(updatedMessages)
+      const response = await sendChatMessage(updatedMessages, session?.access_token)
       const assistantMessage = { role: 'assistant', content: response.message }
       setMessages(prev => [...prev, assistantMessage])
 
@@ -40,7 +42,7 @@ export function useChat() {
     } finally {
       setIsLoading(false)
     }
-  }, [messages])
+  }, [messages, session])
 
   const clearMessages = useCallback(() => {
     setMessages([])
