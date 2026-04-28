@@ -3,6 +3,10 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
+const DOMAIN = '@asti.local'
+export const toUsername = (email) =>
+  email?.endsWith(DOMAIN) ? email.slice(0, -DOMAIN.length) : (email ?? '')
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -36,16 +40,10 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  async function signIn(email, password) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return error
-  }
-
-  async function signUp(email, password, fullName) {
-    const { error } = await supabase.auth.signUp({
-      email,
+  async function signIn(username, password) {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: `${username.trim().toLowerCase()}${DOMAIN}`,
       password,
-      options: { data: { full_name: fullName } },
     })
     return error
   }
@@ -55,7 +53,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user, profile, loading, profileLoading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user, profile, loading, profileLoading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

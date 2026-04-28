@@ -1,4 +1,4 @@
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth, toUsername } from '../contexts/AuthContext'
 
 const ROLE_COLORS = {
   admin:      'bg-purple-100 text-purple-700',
@@ -11,7 +11,7 @@ export default function UserMenu() {
   if (!profile) return null
 
   const roleColor = ROLE_COLORS[profile.role] ?? ROLE_COLORS.viewer
-  const displayName = profile.full_name || profile.email || 'User'
+  const displayName = profile.full_name || toUsername(profile.email) || 'User'
 
   return (
     <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-100 bg-white">

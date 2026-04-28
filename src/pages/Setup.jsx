@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function Setup() {
+  const { profile, session } = useAuth()
+  const isAdmin = profile?.role === 'admin'
+
   const [modules, setModules] = useState([])
   const [selectedModuleId, setSelectedModuleId] = useState('')
   const [allActiveStudents, setAllActiveStudents] = useState([])
@@ -190,6 +194,48 @@ export default function Setup() {
     setSaving(false)
   }
 
+  // ── User Management ───────────────────────────────────
+
+  const [newUsername, setNewUsername] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newFullName, setNewFullName] = useState('')
+  const [newRole, setNewRole] = useState('viewer')
+  const [userError, setUserError] = useState(null)
+  const [userSuccess, setUserSuccess] = useState(null)
+  const [creatingUser, setCreatingUser] = useState(false)
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault()
+    setUserError(null)
+    setUserSuccess(null)
+    setCreatingUser(true)
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ username: newUsername, password: newPassword, fullName: newFullName, userRole: newRole }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setUserError(data.error || 'Failed to create user.')
+      } else {
+        setUserSuccess(`User "${newUsername}" created successfully.`)
+        setNewUsername('')
+        setNewPassword('')
+        setNewFullName('')
+        setNewRole('viewer')
+      }
+    } catch {
+      setUserError('Network error. Please try again.')
+    }
+
+    setCreatingUser(false)
+  }
+
   // ── Derived State ──────────────────────────────────────
 
   const selectedMod = modules.find(m => m.id === selectedModuleId)
@@ -363,6 +409,87 @@ export default function Setup() {
         </div>
 
       </section>
+
+      {/* ── USER MANAGEMENT (Admin only) ── */}
+      {isAdmin && (
+        <section className="flex flex-col gap-6">
+          <header>
+            <h1 className="text-2xl font-semibold text-gray-900">User Management</h1>
+            <p className="text-sm text-gray-500 mt-1">Create login accounts for instructors and viewers.</p>
+          </header>
+
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Create New User</h2>
+
+            {userError && (
+              <div className="mb-4 px-3 py-2 rounded-lg bg-red-50 text-red-600 text-sm">{userError}</div>
+            )}
+            {userSuccess && (
+              <div className="mb-4 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-sm">{userSuccess}</div>
+            )}
+
+            <form onSubmit={handleCreateUser} className="flex flex-col gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={newFullName}
+                    onChange={e => setNewFullName(e.target.value)}
+                    required
+                    placeholder="Jane Smith"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Username</label>
+                  <input
+                    type="text"
+                    value={newUsername}
+                    onChange={e => setNewUsername(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    required
+                    placeholder="jane_smith"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="••••••••"
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                  <select
+                    value={newRole}
+                    onChange={e => setNewRole(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-500 cursor-pointer transition-colors"
+                  >
+                    <option value="viewer">Viewer</option>
+                    <option value="instructor">Instructor</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end mt-2">
+                <button
+                  type="submit"
+                  disabled={creatingUser}
+                  className="bg-gray-900 text-white hover:bg-gray-800 font-medium text-sm px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  {creatingUser ? 'Creating…' : 'Create User'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+      )}
 
       {/* ── STICKY SAVE BAR ── */}
       {hasChanges && (
