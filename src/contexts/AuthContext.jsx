@@ -14,6 +14,21 @@ export function AuthProvider({ children }) {
   const [profileLoading, setProfileLoading] = useState(false) // profile fetch in flight?
 
   useEffect(() => {
+    // Safety net: if auth doesn't resolve in 8s, clear the stale token and unblock the UI.
+    const authTimeout = setTimeout(() => {
+      setLoading(prev => {
+        if (!prev) return prev
+        const projectRef = import.meta.env.VITE_SUPABASE_URL?.match(/\/\/([^.]+)/)?.[1] ?? ''
+        localStorage.removeItem(`sb-${projectRef}-auth-token`)
+        setSession(null)
+        setProfile(null)
+        return false
+      })
+    }, 8000)
+    return () => clearTimeout(authTimeout)
+  }, [])
+
+  useEffect(() => {
     // onAuthStateChange fires immediately with INITIAL_SESSION — no need for getSession()
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
