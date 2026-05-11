@@ -9,7 +9,7 @@ export const tools = [
       {
         name: 'get_modules',
         description: 'List all available modules/subjects in the system.',
-        parameters: { type: 'OBJECT', properties: {}, required: [] },
+        parameters: { type: 'OBJECT', properties: {} },
       },
       {
         name: 'get_student_list',
@@ -22,7 +22,6 @@ export const tools = [
               description: 'Name (or partial name) of the module. Optional — defaults to current module.',
             },
           },
-          required: [],
         },
       },
       {
@@ -36,7 +35,6 @@ export const tools = [
               description: 'Name (or partial name) of the module. Optional — defaults to current module.',
             },
           },
-          required: [],
         },
       },
       {
@@ -72,7 +70,6 @@ export const tools = [
               description: 'Name (or partial name) of the module. Optional — defaults to current module.',
             },
           },
-          required: [],
         },
       },
       {
@@ -98,7 +95,6 @@ export const tools = [
               description: 'End date in YYYY-MM-DD format. Optional.',
             },
           },
-          required: [],
         },
       },
 
