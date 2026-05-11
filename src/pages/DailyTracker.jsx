@@ -5,6 +5,7 @@ import OverridePanel from '../components/OverridePanel'
 import StudentRow from '../components/StudentRow'
 import SaveButton from '../components/SaveButton'
 import { useAuth } from '../contexts/AuthContext'
+import { useBatch } from '../contexts/BatchContext'
 import { useVoiceInput } from '../hooks/useVoiceInput'
 import { sendChatMessage } from '../lib/chat'
 
@@ -15,6 +16,7 @@ import { sendChatMessage } from '../lib/chat'
 export default function DailyTracker() {
   const { profile, session } = useAuth()
   const canWrite = profile?.role === 'admin' || profile?.role === 'instructor'
+  const { activeBatch } = useBatch()
 
   const [voiceStatus, setVoiceStatus] = useState(null) // null | 'listening' | 'processing' | 'done' | 'error'
   const [voiceMessage, setVoiceMessage] = useState('')
@@ -47,7 +49,6 @@ export default function DailyTracker() {
   // ── State ─────────────────────────────────────────────
   const [modules, setModules] = useState([])
   const [activeModule, setActiveModule] = useState(null)
-  const [activeIntake, setActiveIntake] = useState(null)
   const [selectedDate, setSelectedDate] = useState(today())
   const [students, setStudents] = useState([])
   const [attendance, setAttendance] = useState({}) // { studentId: 'present' | 'absent' }
@@ -65,44 +66,36 @@ export default function DailyTracker() {
 
   // ── Data fetching ─────────────────────────────────────
 
-  /** Fetch all modules + current module + active intake on mount */
+  /** Fetch all modules + current module on mount */
   useEffect(() => {
     async function init() {
       setLoading(true)
-
-      // Fetch modules and active intake in parallel
-      const [{ data: allModules }, { data: intakes }] = await Promise.all([
-        supabase.from('modules').select('*').order('order_index'),
-        supabase.from('intakes').select('*').eq('is_active', true).limit(1),
-      ])
-
+      const { data: allModules } = await supabase.from('modules').select('*').order('order_index')
       setModules(allModules || [])
-      setActiveIntake(intakes?.[0] || null)
-
       const current = allModules?.find((m) => m.is_current)
       setActiveModule(current || allModules?.[0] || null)
-
       setLoading(false)
     }
     init()
   }, [])
 
-  /** Fetch students & existing attendance whenever module or date changes */
+  /** Fetch students & existing attendance whenever module, batch, or date changes */
   const fetchStudentsAndAttendance = useCallback(async () => {
-    if (!activeModule || !activeIntake) return
+    if (!activeModule || !activeBatch) return
 
-    // Fetch enrolled students and existing session in parallel
+    // Fetch enrolled students (scoped to this batch) and existing session in parallel
     const [{ data: enrolled }, { data: sessions }] = await Promise.all([
       supabase
         .from('enrollments')
-        .select('student_id, students!inner(id, name, is_active)')
+        .select('student_id, students!inner(id, name, is_active, intake_id)')
         .eq('module_id', activeModule.id)
-        .eq('students.is_active', true),
+        .eq('students.is_active', true)
+        .eq('students.intake_id', activeBatch.id),
       supabase
         .from('sessions')
         .select('id')
         .eq('module_id', activeModule.id)
-        .eq('intake_id', activeIntake.id)
+        .eq('intake_id', activeBatch.id)
         .eq('date', selectedDate)
         .limit(1),
     ])
@@ -133,7 +126,7 @@ export default function DailyTracker() {
 
     setAttendance(defaultAttendance)
     setSaved(false)
-  }, [activeModule, activeIntake, selectedDate])
+  }, [activeModule, activeBatch, selectedDate])
 
   useEffect(() => {
     fetchStudentsAndAttendance()
@@ -166,7 +159,7 @@ export default function DailyTracker() {
 
   /** Save attendance — create session if needed, then upsert attendance rows */
   async function handleSave() {
-    if (!activeModule || !activeIntake || students.length === 0) return
+    if (!activeModule || !activeBatch || students.length === 0) return
 
     setSaving(true)
     setSaved(false)
@@ -180,7 +173,7 @@ export default function DailyTracker() {
           .from('sessions')
           .insert({
             module_id: activeModule.id,
-            intake_id: activeIntake.id,
+            intake_id: activeBatch.id,
             date: selectedDate,
           })
           .select('id')

@@ -1,0 +1,27 @@
+import { useBatch } from '../contexts/BatchContext'
+
+export default function BatchSelector() {
+  const { batches, activeBatch, setActiveBatch } = useBatch()
+
+  if (batches.length === 0) return null
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-gray-400 hidden sm:inline">Batch</span>
+      <select
+        value={activeBatch?.id || ''}
+        onChange={e => {
+          const batch = batches.find(b => b.id === e.target.value)
+          if (batch) setActiveBatch(batch)
+        }}
+        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 bg-white
+                   focus:outline-none focus:ring-1 focus:ring-emerald-400 cursor-pointer
+                   max-w-[140px] truncate"
+      >
+        {batches.map(b => (
+          <option key={b.id} value={b.id}>{b.name}</option>
+        ))}
+      </select>
+    </div>
+  )
+}

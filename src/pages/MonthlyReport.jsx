@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import BatchSelector from '../components/BatchSelector'
+import { useBatch } from '../contexts/BatchContext'
 
 /**
  * MonthlyReport — grid view of attendance for a selected month.
@@ -9,10 +11,11 @@ import { supabase } from '../lib/supabase'
  * Cells = P (green) / A (grey)
  */
 export default function MonthlyReport() {
+  const { activeBatch } = useBatch()
+
   // ── State ──────────────────────────────────────────────
   const [modules, setModules] = useState([])
   const [activeModule, setActiveModule] = useState(null)
-  const [activeIntake, setActiveIntake] = useState(null)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()) // 0-indexed
   const [students, setStudents] = useState([])
@@ -47,42 +50,30 @@ export default function MonthlyReport() {
 
   // ── Data fetching ──────────────────────────────────────
 
-  /** Initial load: modules + intake */
+  /** Initial load: modules */
   useEffect(() => {
     async function init() {
       setLoading(true)
-
-      const { data: allModules } = await supabase
-        .from('modules')
-        .select('*')
-        .order('order_index')
+      const { data: allModules } = await supabase.from('modules').select('*').order('order_index')
       setModules(allModules || [])
-
       const current = allModules?.find((m) => m.is_current)
       setActiveModule(current || allModules?.[0] || null)
-
-      const { data: intakes } = await supabase
-        .from('intakes')
-        .select('*')
-        .eq('is_active', true)
-        .limit(1)
-      setActiveIntake(intakes?.[0] || null)
-
       setLoading(false)
     }
     init()
   }, [])
 
-  /** Fetch students + attendance for the selected module/month */
+  /** Fetch students + attendance for the selected module/batch/month */
   const fetchReport = useCallback(async () => {
-    if (!activeModule || !activeIntake) return
+    if (!activeModule || !activeBatch) return
 
-    // 1. Enrolled students
+    // 1. Enrolled students scoped to this batch
     const { data: enrolled } = await supabase
       .from('enrollments')
-      .select('student_id, students!inner(id, name, is_active)')
+      .select('student_id, students!inner(id, name, is_active, intake_id)')
       .eq('module_id', activeModule.id)
       .eq('students.is_active', true)
+      .eq('students.intake_id', activeBatch.id)
 
     const studentList = enrolled?.map((e) => e.students) || []
     studentList.sort((a, b) => a.name.localeCompare(b.name))
@@ -92,12 +83,12 @@ export default function MonthlyReport() {
     const startDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`
     const endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
 
-    // 3. All sessions for this module/intake in date range
+    // 3. All sessions for this module/batch in date range
     const { data: sessions } = await supabase
       .from('sessions')
       .select('id, date')
       .eq('module_id', activeModule.id)
-      .eq('intake_id', activeIntake.id)
+      .eq('intake_id', activeBatch.id)
       .gte('date', startDate)
       .lte('date', endDate)
 
@@ -130,7 +121,7 @@ export default function MonthlyReport() {
     })
 
     setAttendanceMap(map)
-  }, [activeModule, activeIntake, selectedYear, selectedMonth, daysInMonth])
+  }, [activeModule, activeBatch, selectedYear, selectedMonth, daysInMonth])
 
   useEffect(() => {
     fetchReport()
@@ -157,7 +148,10 @@ export default function MonthlyReport() {
     <div className="flex flex-col h-full">
       {/* ── Header ─────────────────────────────────────── */}
       <header className="pt-8 pb-4 px-6">
-        <p className="text-sm text-gray-400 tracking-wide uppercase">Asti</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-400 tracking-wide uppercase">Asti</p>
+          <BatchSelector />
+        </div>
         <h1 className="text-center text-2xl font-semibold text-gray-800 mt-4">
           Monthly Report
         </h1>

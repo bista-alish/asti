@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { useBatch } from '../contexts/BatchContext'
 
 export default function Setup() {
   const { profile, session } = useAuth()
   const isAdmin = profile?.role === 'admin'
+  const { activeBatch } = useBatch()
 
   const [modules, setModules] = useState([])
   const [selectedModuleId, setSelectedModuleId] = useState('')
@@ -55,12 +57,10 @@ export default function Setup() {
       return
     }
 
-    // Get all active students
-    const { data: allActive } = await supabase
-      .from('students')
-      .select('id, name')
-      .eq('is_active', true)
-      .order('name')
+    // Get active students scoped to the current batch
+    let studentsQuery = supabase.from('students').select('id, name').eq('is_active', true).order('name')
+    if (activeBatch?.id) studentsQuery = studentsQuery.eq('intake_id', activeBatch.id)
+    const { data: allActive } = await studentsQuery
 
     // Get enrolled student IDs for this module from DB
     const { data: enrolledLinks } = await supabase
@@ -73,7 +73,7 @@ export default function Setup() {
     setAllActiveStudents(allActive || [])
     setInitialEnrolledIds(enrolledIds)
     setDraftEnrolledIds(enrolledIds)
-  }, [])
+  }, [activeBatch])
 
   useEffect(() => {
     async function init() {
@@ -146,10 +146,10 @@ export default function Setup() {
     if (!newStudentName.trim() || !selectedModuleId) return
     setSaving(true)
 
-    // Insert student immediately so we get an ID
+    // Insert student immediately so we get an ID; assign to the active batch
     const { data: student, error } = await supabase
       .from('students')
-      .insert({ name: newStudentName.trim(), is_active: true })
+      .insert({ name: newStudentName.trim(), is_active: true, intake_id: activeBatch?.id || null })
       .select()
       .single()
 

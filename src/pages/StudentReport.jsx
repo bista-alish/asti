@@ -3,8 +3,12 @@ import { supabase } from '../lib/supabase'
 import XLSXStyle from 'xlsx-js-style'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import BatchSelector from '../components/BatchSelector'
+import { useBatch } from '../contexts/BatchContext'
 
 export default function StudentReport() {
+  const { activeBatch } = useBatch()
+
   const [students, setStudents]               = useState([])
   const [selectedStudentId, setSelectedStudentId] = useState('')
   const [records, setRecords]                 = useState([])
@@ -17,21 +21,20 @@ export default function StudentReport() {
   const [fromDate, setFromDate]     = useState('')
   const [toDate, setToDate]         = useState('')
 
-  // ── Fetch students ─────────────────────────────────
+  // ── Fetch students for the active batch ────────────
   useEffect(() => {
     async function fetchStudents() {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('students')
-        .select('id, name')
-        .eq('is_active', true)
-        .order('name')
+      setSelectedStudentId('')
+      let query = supabase.from('students').select('id, name').eq('is_active', true).order('name')
+      if (activeBatch?.id) query = query.eq('intake_id', activeBatch.id)
+      const { data, error } = await query
       if (error) console.error('Error fetching students:', error)
       setStudents(data || [])
       setLoading(false)
     }
     fetchStudents()
-  }, [])
+  }, [activeBatch])
 
   // ── Fetch records for selected student ─────────────
   const fetchStudentRecords = useCallback(async (studentId) => {
@@ -240,7 +243,10 @@ export default function StudentReport() {
     <div className="flex flex-col h-full bg-gray-50/30">
       {/* ── Header ──────────────────────────────────── */}
       <header className="pt-8 pb-4 px-6">
-        <p className="text-sm text-gray-400 tracking-wide uppercase">Asti</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-400 tracking-wide uppercase">Asti</p>
+          <BatchSelector />
+        </div>
         <h1 className="text-center text-2xl font-semibold text-gray-800 mt-4">
           Student Attendance
         </h1>
