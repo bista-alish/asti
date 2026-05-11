@@ -26,11 +26,35 @@ export default function StudentReport() {
     async function fetchStudents() {
       setLoading(true)
       setSelectedStudentId('')
-      let query = supabase.from('students').select('id, name').eq('is_active', true).order('name')
-      if (activeBatch?.id) query = query.eq('intake_id', activeBatch.id)
-      const { data, error } = await query
-      if (error) console.error('Error fetching students:', error)
-      setStudents(data || [])
+
+      if (activeBatch?.id) {
+        const { data: batchLinks } = await supabase
+          .from('student_intakes')
+          .select('student_id')
+          .eq('intake_id', activeBatch.id)
+        const ids = batchLinks?.map(r => r.student_id) || []
+
+        if (ids.length === 0) {
+          setStudents([])
+          setLoading(false)
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('students')
+          .select('id, name')
+          .eq('is_active', true)
+          .in('id', ids)
+          .order('name')
+        if (error) console.error('Error fetching students:', error)
+        setStudents(data || [])
+      } else {
+        const { data, error } = await supabase
+          .from('students').select('id, name').eq('is_active', true).order('name')
+        if (error) console.error('Error fetching students:', error)
+        setStudents(data || [])
+      }
+
       setLoading(false)
     }
     fetchStudents()

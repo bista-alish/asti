@@ -83,14 +83,28 @@ export default function DailyTracker() {
   const fetchStudentsAndAttendance = useCallback(async () => {
     if (!activeModule || !activeBatch) return
 
-    // Fetch enrolled students (scoped to this batch) and existing session in parallel
+    // Get student IDs that belong to this batch
+    const { data: batchLinks } = await supabase
+      .from('student_intakes')
+      .select('student_id')
+      .eq('intake_id', activeBatch.id)
+    const batchStudentIds = batchLinks?.map(r => r.student_id) || []
+
+    if (batchStudentIds.length === 0) {
+      setStudents([])
+      setAttendance({})
+      setSaved(false)
+      return
+    }
+
+    // Fetch enrolled students (in this batch + module) and existing session in parallel
     const [{ data: enrolled }, { data: sessions }] = await Promise.all([
       supabase
         .from('enrollments')
-        .select('student_id, students!inner(id, name, is_active, intake_id)')
+        .select('student_id, students!inner(id, name, is_active)')
         .eq('module_id', activeModule.id)
         .eq('students.is_active', true)
-        .eq('students.intake_id', activeBatch.id),
+        .in('student_id', batchStudentIds),
       supabase
         .from('sessions')
         .select('id')

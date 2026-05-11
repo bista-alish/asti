@@ -67,23 +67,36 @@ export default function MonthlyReport() {
   const fetchReport = useCallback(async () => {
     if (!activeModule || !activeBatch) return
 
-    // 1. Enrolled students scoped to this batch
+    // 1. Get student IDs that belong to this batch
+    const { data: batchLinks } = await supabase
+      .from('student_intakes')
+      .select('student_id')
+      .eq('intake_id', activeBatch.id)
+    const batchStudentIds = batchLinks?.map(r => r.student_id) || []
+
+    if (batchStudentIds.length === 0) {
+      setStudents([])
+      setAttendanceMap({})
+      return
+    }
+
+    // 2. Enrolled students scoped to this batch
     const { data: enrolled } = await supabase
       .from('enrollments')
-      .select('student_id, students!inner(id, name, is_active, intake_id)')
+      .select('student_id, students!inner(id, name, is_active)')
       .eq('module_id', activeModule.id)
       .eq('students.is_active', true)
-      .eq('students.intake_id', activeBatch.id)
+      .in('student_id', batchStudentIds)
 
     const studentList = enrolled?.map((e) => e.students) || []
     studentList.sort((a, b) => a.name.localeCompare(b.name))
     setStudents(studentList)
 
-    // 2. Date range for the month
+    // 3. Date range for the month
     const startDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`
     const endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
 
-    // 3. All sessions for this module/batch in date range
+    // 4. All sessions for this module/batch in date range
     const { data: sessions } = await supabase
       .from('sessions')
       .select('id, date')
@@ -97,7 +110,7 @@ export default function MonthlyReport() {
       return
     }
 
-    // 4. Attendance records for those sessions
+    // 5. Attendance records for those sessions
     const sessionIds = sessions.map((s) => s.id)
     const { data: records } = await supabase
       .from('attendance')

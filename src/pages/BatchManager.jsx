@@ -29,27 +29,38 @@ export default function BatchManager() {
   const fetchIntakes = useCallback(async () => {
     setLoading(true)
 
-    const [{ data: allIntakes }, { data: allStudents }] = await Promise.all([
+    const [{ data: allIntakes }, { data: links }] = await Promise.all([
       supabase.from('intakes').select('*').order('created_at', { ascending: false }),
-      supabase.from('students').select('intake_id').eq('is_active', true).not('intake_id', 'is', null),
+      supabase.from('student_intakes').select('intake_id'),
     ])
 
     setIntakes(allIntakes || [])
 
     const counts = {}
-    allStudents?.forEach(s => {
-      counts[s.intake_id] = (counts[s.intake_id] || 0) + 1
+    links?.forEach(r => {
+      counts[r.intake_id] = (counts[r.intake_id] || 0) + 1
     })
     setCountMap(counts)
     setLoading(false)
   }, [])
 
   const fetchStudentsForIntake = useCallback(async (intakeId) => {
+    const { data: links } = await supabase
+      .from('student_intakes')
+      .select('student_id')
+      .eq('intake_id', intakeId)
+    const ids = links?.map(r => r.student_id) || []
+
+    if (ids.length === 0) {
+      setStudentMap(prev => ({ ...prev, [intakeId]: [] }))
+      return
+    }
+
     const { data } = await supabase
       .from('students')
       .select('id, name')
-      .eq('intake_id', intakeId)
       .eq('is_active', true)
+      .in('id', ids)
       .order('name')
     setStudentMap(prev => ({ ...prev, [intakeId]: data || [] }))
   }, [])
@@ -136,7 +147,10 @@ export default function BatchManager() {
   }
 
   const handleMoveStudent = async (studentId, targetIntakeId, currentIntakeId) => {
-    await supabase.from('students').update({ intake_id: targetIntakeId }).eq('id', studentId)
+    await Promise.all([
+      supabase.from('student_intakes').delete().eq('student_id', studentId).eq('intake_id', currentIntakeId),
+      supabase.from('student_intakes').upsert({ student_id: studentId, intake_id: targetIntakeId }),
+    ])
     await Promise.all([
       fetchStudentsForIntake(currentIntakeId),
       fetchStudentsForIntake(targetIntakeId),
@@ -163,10 +177,13 @@ export default function BatchManager() {
     e.preventDefault()
     if (!newStudentName.trim()) return
     setSaving(true)
-    const { error } = await supabase
+    const { data: student, error } = await supabase
       .from('students')
-      .insert({ name: newStudentName.trim(), is_active: true, intake_id: intakeId })
-    if (!error) {
+      .insert({ name: newStudentName.trim(), is_active: true })
+      .select()
+      .single()
+    if (!error && student) {
+      await supabase.from('student_intakes').insert({ student_id: student.id, intake_id: intakeId })
       setNewStudentName('')
       setAddingToId(null)
       await fetchStudentsForIntake(intakeId)

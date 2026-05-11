@@ -58,9 +58,25 @@ export default function Setup() {
     }
 
     // Get active students scoped to the current batch
-    let studentsQuery = supabase.from('students').select('id, name').eq('is_active', true).order('name')
-    if (activeBatch?.id) studentsQuery = studentsQuery.eq('intake_id', activeBatch.id)
-    const { data: allActive } = await studentsQuery
+    let allActive
+    if (activeBatch?.id) {
+      const { data: batchLinks } = await supabase
+        .from('student_intakes')
+        .select('student_id')
+        .eq('intake_id', activeBatch.id)
+      const batchStudentIds = batchLinks?.map(r => r.student_id) || []
+
+      if (batchStudentIds.length === 0) {
+        allActive = []
+      } else {
+        const { data } = await supabase
+          .from('students').select('id, name').eq('is_active', true).in('id', batchStudentIds).order('name')
+        allActive = data || []
+      }
+    } else {
+      const { data } = await supabase.from('students').select('id, name').eq('is_active', true).order('name')
+      allActive = data || []
+    }
 
     // Get enrolled student IDs for this module from DB
     const { data: enrolledLinks } = await supabase
@@ -114,7 +130,7 @@ export default function Setup() {
       .single()
 
     if (!error && data) {
-      const mods = await fetchModules()
+      await fetchModules()
       setSelectedModuleId(data.id)
     }
     setLoading(false)
@@ -146,14 +162,20 @@ export default function Setup() {
     if (!newStudentName.trim() || !selectedModuleId) return
     setSaving(true)
 
-    // Insert student immediately so we get an ID; assign to the active batch
+    // Insert student immediately so we get an ID
     const { data: student, error } = await supabase
       .from('students')
-      .insert({ name: newStudentName.trim(), is_active: true, intake_id: activeBatch?.id || null })
+      .insert({ name: newStudentName.trim(), is_active: true })
       .select()
       .single()
 
     if (!error && student) {
+      // Link student to the active batch via junction table
+      if (activeBatch?.id) {
+        await supabase
+          .from('student_intakes')
+          .insert({ student_id: student.id, intake_id: activeBatch.id })
+      }
       setNewStudentName('')
       setAllActiveStudents(prev => [...prev, student].sort((a,b) => a.name.localeCompare(b.name)))
       // Auto-enroll them in the draft map
