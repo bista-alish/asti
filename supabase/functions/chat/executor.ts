@@ -38,15 +38,34 @@ async function resolveStudent(db: SupabaseClient, studentName: string) {
   return { student: data[0] }
 }
 
-/** Get or create a session for a module + active intake on a given date. */
-async function getOrCreateSession(db: SupabaseClient, moduleId: string, date: string) {
-  const { data: intakes } = await db
+/** Resolve the active intake. Returns the intake row (id, name, time_slot) or an error string. */
+async function getActiveIntake(db: SupabaseClient) {
+  const { data } = await db
     .from('intakes')
-    .select('id')
+    .select('id, name, time_slot')
     .eq('is_active', true)
     .limit(1)
-  if (!intakes || intakes.length === 0) return { error: 'No active intake found.' }
-  const intakeId = intakes[0].id
+  if (!data || data.length === 0) return { error: 'No active intake found.' }
+  return { intake: data[0] }
+}
+
+/** Get or create a session for a module + active intake on a given date. */
+async function getOrCreateSession(db: SupabaseClient, moduleId: string, date: string) {
+  const ar = await getActiveIntake(db)
+  if (ar.error) return { error: ar.error }
+  const intakeId = ar.intake!.id
+
+  // Refuse session creation on a non-class day
+  const { data: leave } = await db
+    .from('intake_leaves')
+    .select('reason')
+    .eq('intake_id', intakeId)
+    .eq('date', date)
+    .maybeSingle()
+  if (leave) {
+    const reason = (leave as any).reason
+    return { error: `${ar.intake!.name} has no class on ${date}${reason ? ` (${reason})` : ''}. Remove the non-class day first to mark attendance.` }
+  }
 
   const { data: existing } = await db
     .from('sessions')
@@ -88,9 +107,13 @@ export async function executeTool(
 
   switch (toolName) {
     case 'get_modules': {
-      const { data } = await db.from('modules').select('name, is_current').order('order_index')
+      const [{ data }, ar] = await Promise.all([
+        db.from('modules').select('name, is_current').order('order_index'),
+        getActiveIntake(db),
+      ])
       if (!data || data.length === 0) return 'No modules found.'
-      return data.map(m => `${m.is_current ? '★ ' : ''}${m.name}`).join('\n')
+      const intakeLine = !ar.error ? `\n(active batch: ${ar.intake!.name} — ${ar.intake!.time_slot})` : ''
+      return data.map((m: any) => `${m.is_current ? '★ ' : ''}${m.name}`).join('\n') + intakeLine
     }
 
     case 'get_student_list': {
@@ -111,44 +134,54 @@ export async function executeTool(
 
     case 'get_attendance_by_date': {
       const date = (args.date as string) || today()
-      const modResult = await resolveModule(db, args.module_name as string | undefined)
+      const [modResult, ar] = await Promise.all([
+        resolveModule(db, args.module_name as string | undefined),
+        getActiveIntake(db),
+      ])
       if (modResult.error) return modResult.error
+      if (ar.error) return ar.error
 
       const { data: sessions } = await db
         .from('sessions')
         .select('id')
         .eq('module_id', modResult.module!.id)
+        .eq('intake_id', ar.intake!.id)
         .eq('date', date)
         .limit(1)
 
-      if (!sessions || sessions.length === 0) return `No session recorded for ${modResult.module!.name} on ${date}.`
+      if (!sessions || sessions.length === 0) return `No session recorded for ${modResult.module!.name} (${ar.intake!.name}) on ${date}.`
 
       const { data: records } = await db
         .from('attendance')
         .select('status, students!inner(name)')
         .eq('session_id', sessions[0].id)
 
-      if (!records || records.length === 0) return `No attendance records for ${modResult.module!.name} on ${date}.`
+      if (!records || records.length === 0) return `No attendance records for ${modResult.module!.name} (${ar.intake!.name}) on ${date}.`
 
       const present = records.filter((r: any) => r.status === 'present').map((r: any) => r.students.name).sort()
       const absent = records.filter((r: any) => r.status === 'absent').map((r: any) => r.students.name).sort()
 
-      return `Attendance for ${modResult.module!.name} on ${date}:\n\nPresent (${present.length}): ${present.join(', ') || 'none'}\nAbsent (${absent.length}): ${absent.join(', ') || 'none'}`
+      return `Attendance for ${modResult.module!.name} (${ar.intake!.name}) on ${date}:\n\nPresent (${present.length}): ${present.join(', ') || 'none'}\nAbsent (${absent.length}): ${absent.join(', ') || 'none'}`
     }
 
     case 'get_absent_students': {
       const date = (args.date as string) || today()
-      const modResult = await resolveModule(db, args.module_name as string | undefined)
+      const [modResult, ar] = await Promise.all([
+        resolveModule(db, args.module_name as string | undefined),
+        getActiveIntake(db),
+      ])
       if (modResult.error) return modResult.error
+      if (ar.error) return ar.error
 
       const { data: sessions } = await db
         .from('sessions')
         .select('id')
         .eq('module_id', modResult.module!.id)
+        .eq('intake_id', ar.intake!.id)
         .eq('date', date)
         .limit(1)
 
-      if (!sessions || sessions.length === 0) return `No session recorded for ${modResult.module!.name} on ${date}.`
+      if (!sessions || sessions.length === 0) return `No session recorded for ${modResult.module!.name} (${ar.intake!.name}) on ${date}.`
 
       const { data: records } = await db
         .from('attendance')
@@ -156,25 +189,30 @@ export async function executeTool(
         .eq('session_id', sessions[0].id)
         .eq('status', 'absent')
 
-      if (!records || records.length === 0) return `No absences recorded for ${modResult.module!.name} on ${date}.`
+      if (!records || records.length === 0) return `No absences recorded for ${modResult.module!.name} (${ar.intake!.name}) on ${date}.`
       const names = records.map((r: any) => r.students.name).sort()
-      return `Absent on ${date} (${modResult.module!.name}):\n${names.join('\n')}`
+      return `Absent on ${date} (${modResult.module!.name} — ${ar.intake!.name}):\n${names.join('\n')}`
     }
 
     case 'get_attendance_summary': {
-      const modResult = await resolveModule(db, args.module_name as string | undefined)
+      const [modResult, ar] = await Promise.all([
+        resolveModule(db, args.module_name as string | undefined),
+        getActiveIntake(db),
+      ])
       if (modResult.error) return modResult.error
+      if (ar.error) return ar.error
 
       let sessionQuery = db
         .from('sessions')
         .select('id, date')
         .eq('module_id', modResult.module!.id)
+        .eq('intake_id', ar.intake!.id)
 
       if (args.from_date) sessionQuery = sessionQuery.gte('date', args.from_date as string)
       if (args.to_date) sessionQuery = sessionQuery.lte('date', args.to_date as string)
 
       const { data: sessions } = await sessionQuery
-      if (!sessions || sessions.length === 0) return `No sessions found for ${modResult.module!.name} in the requested period.`
+      if (!sessions || sessions.length === 0) return `No sessions found for ${modResult.module!.name} (${ar.intake!.name}) in the requested period.`
 
       const sessionIds = sessions.map((s: any) => s.id)
 
@@ -205,7 +243,7 @@ export async function executeTool(
         return `${name}: ${s.present}/${total} present (${pct}%)`
       })
 
-      return `Attendance summary for ${modResult.module!.name} (${sessions.length} sessions):\n${lines.join('\n')}`
+      return `Attendance summary for ${modResult.module!.name} — ${ar.intake!.name} (${sessions.length} sessions):\n${lines.join('\n')}`
     }
 
     case 'mark_attendance': {

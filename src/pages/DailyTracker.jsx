@@ -53,6 +53,7 @@ export default function DailyTracker() {
   const [students, setStudents] = useState([])
   const [attendance, setAttendance] = useState({}) // { studentId: 'present' | 'absent' }
   const [existingSessionId, setExistingSessionId] = useState(null)
+  const [leaveForToday, setLeaveForToday] = useState(null) // { reason } | null
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -97,8 +98,8 @@ export default function DailyTracker() {
       return
     }
 
-    // Fetch enrolled students (in this batch + module) and existing session in parallel
-    const [{ data: enrolled }, { data: sessions }] = await Promise.all([
+    // Fetch enrolled students, existing session, and any leave for today in parallel
+    const [{ data: enrolled }, { data: sessions }, { data: leaveRow }] = await Promise.all([
       supabase
         .from('enrollments')
         .select('student_id, students!inner(id, name, is_active)')
@@ -112,7 +113,15 @@ export default function DailyTracker() {
         .eq('intake_id', activeBatch.id)
         .eq('date', selectedDate)
         .limit(1),
+      supabase
+        .from('intake_leaves')
+        .select('reason')
+        .eq('intake_id', activeBatch.id)
+        .eq('date', selectedDate)
+        .maybeSingle(),
     ])
+
+    setLeaveForToday(leaveRow || null)
 
     const studentList = enrolled?.map((e) => e.students) || []
     studentList.sort((a, b) => a.name.localeCompare(b.name))
@@ -174,6 +183,10 @@ export default function DailyTracker() {
   /** Save attendance — create session if needed, then upsert attendance rows */
   async function handleSave() {
     if (!activeModule || !activeBatch || students.length === 0) return
+    if (leaveForToday) {
+      alert('This date is marked as a non-class day. Remove the leave in Batches first to mark attendance.')
+      return
+    }
 
     setSaving(true)
     setSaved(false)
@@ -246,8 +259,16 @@ export default function DailyTracker() {
         onDateChange={handleDateChange}
       />
 
+      {/* Non-class day banner */}
+      {leaveForToday && (
+        <div className="mx-4 mb-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          <strong>No class today.</strong>
+          {leaveForToday.reason ? ` ${leaveForToday.reason}` : ''}
+        </div>
+      )}
+
       {/* Summary bar + Mark All buttons */}
-      {students.length > 0 && (
+      {students.length > 0 && !leaveForToday && (
         <div className="mx-4 mb-2 flex items-center justify-between px-4 py-2 bg-gray-50 rounded-xl border border-gray-100">
           <div className="flex items-center gap-3 text-xs font-medium">
             <span className="text-emerald-600">
@@ -287,23 +308,25 @@ export default function DailyTracker() {
         </div>
       )}
 
-      {/* Student list */}
-      <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 mx-4 mb-2 overflow-hidden">
-        {students.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-8">
-            No students enrolled.
-          </p>
-        ) : (
-          students.map((student) => (
-            <StudentRow
-              key={student.id}
-              student={student}
-              status={attendance[student.id] || 'absent'}
-              onToggle={handleToggle}
-            />
-          ))
-        )}
-      </div>
+      {/* Student list — hidden on non-class days */}
+      {!leaveForToday && (
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 mx-4 mb-2 overflow-hidden">
+          {students.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-8">
+              No students enrolled.
+            </p>
+          ) : (
+            students.map((student) => (
+              <StudentRow
+                key={student.id}
+                student={student}
+                status={attendance[student.id] || 'absent'}
+                onToggle={handleToggle}
+              />
+            ))
+          )}
+        </div>
+      )}
 
       {/* Voice status feedback */}
       {voiceStatus && (
@@ -322,7 +345,7 @@ export default function DailyTracker() {
       )}
 
       {/* Action row: Voice button + Save button — sticky above nav */}
-      {students.length > 0 && canWrite && (
+      {students.length > 0 && canWrite && !leaveForToday && (
         <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 flex items-center gap-2">
           {voiceSupported && (
             <button

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 
 const BatchContext = createContext(null)
@@ -45,8 +45,14 @@ export function BatchProvider({ children }) {
     await supabase.from('intakes').update({ is_active: true }).eq('id', batch.id)
   }, [])
 
+  const batchesBySlot = useMemo(() => ({
+    morning: batches.filter(b => b.time_slot === 'morning'),
+    night:   batches.filter(b => b.time_slot === 'night'),
+    other:   batches.filter(b => !b.time_slot || (b.time_slot !== 'morning' && b.time_slot !== 'night')),
+  }), [batches])
+
   return (
-    <BatchContext.Provider value={{ batches, activeBatch, setActiveBatch, refresh }}>
+    <BatchContext.Provider value={{ batches, batchesBySlot, activeBatch, setActiveBatch, refresh }}>
       {children}
     </BatchContext.Provider>
   )

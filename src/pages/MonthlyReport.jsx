@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import BatchSelector from '../components/BatchSelector'
+import SlotBadge from '../components/SlotBadge'
 import { useBatch } from '../contexts/BatchContext'
 
 /**
@@ -20,6 +21,8 @@ export default function MonthlyReport() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()) // 0-indexed
   const [students, setStudents] = useState([])
   const [attendanceMap, setAttendanceMap] = useState({}) // { "studentId:day" : "present"|"absent" }
+  const [leaveDays, setLeaveDays] = useState(new Set()) // Set of day-of-month numbers that are non-class days
+  const [leaveDayReasons, setLeaveDayReasons] = useState({}) // { day: reason }
   const [loading, setLoading] = useState(true)
 
   // ── Derived helpers ────────────────────────────────────
@@ -96,14 +99,32 @@ export default function MonthlyReport() {
     const startDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`
     const endDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
 
-    // 4. All sessions for this module/batch in date range
-    const { data: sessions } = await supabase
-      .from('sessions')
-      .select('id, date')
-      .eq('module_id', activeModule.id)
-      .eq('intake_id', activeBatch.id)
-      .gte('date', startDate)
-      .lte('date', endDate)
+    // 4. All sessions for this module/batch in date range, and non-class days in parallel
+    const [{ data: sessions }, { data: leaveRows }] = await Promise.all([
+      supabase
+        .from('sessions')
+        .select('id, date')
+        .eq('module_id', activeModule.id)
+        .eq('intake_id', activeBatch.id)
+        .gte('date', startDate)
+        .lte('date', endDate),
+      supabase
+        .from('intake_leaves')
+        .select('date, reason')
+        .eq('intake_id', activeBatch.id)
+        .gte('date', startDate)
+        .lte('date', endDate),
+    ])
+
+    const leaveSet = new Set()
+    const leaveReasons = {}
+    leaveRows?.forEach(l => {
+      const day = new Date(l.date + 'T00:00:00').getDate()
+      leaveSet.add(day)
+      leaveReasons[day] = l.reason || ''
+    })
+    setLeaveDays(leaveSet)
+    setLeaveDayReasons(leaveReasons)
 
     if (!sessions || sessions.length === 0) {
       setAttendanceMap({})
@@ -163,7 +184,10 @@ export default function MonthlyReport() {
       <header className="pt-8 pb-4 px-6">
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-400 tracking-wide uppercase">Asti</p>
-          <BatchSelector />
+          <div className="flex items-center gap-2">
+            <SlotBadge slot={activeBatch?.time_slot} />
+            <BatchSelector />
+          </div>
         </div>
         <h1 className="text-center text-2xl font-semibold text-gray-800 mt-4">
           Monthly Report
@@ -263,12 +287,20 @@ export default function MonthlyReport() {
                   {days.map((day) => {
                     const key = `${student.id}:${day}`
                     const status = attendanceMap[key]
+                    const isLeave = leaveDays.has(day)
                     return (
                       <td
                         key={day}
                         className="px-0.5 py-2 text-center border-b border-gray-100"
                       >
-                        {status === 'present' ? (
+                        {isLeave ? (
+                          <span
+                            title={leaveDayReasons[day] || 'Non-class day'}
+                            className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-100 text-gray-300 text-[11px]"
+                          >
+                            —
+                          </span>
+                        ) : status === 'present' ? (
                           <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-emerald-100 text-emerald-700 text-[11px] font-bold">
                             P
                           </span>

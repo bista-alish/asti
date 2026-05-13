@@ -4,6 +4,7 @@ import XLSXStyle from 'xlsx-js-style'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import BatchSelector from '../components/BatchSelector'
+import SlotBadge from '../components/SlotBadge'
 import { useBatch } from '../contexts/BatchContext'
 
 export default function StudentReport() {
@@ -70,7 +71,8 @@ export default function StudentReport() {
         status,
         sessions (
           date,
-          modules ( name )
+          modules ( name ),
+          intakes ( time_slot )
         )
       `)
       .eq('student_id', studentId)
@@ -83,6 +85,7 @@ export default function StudentReport() {
           date:   r.sessions.date,
           module: r.sessions.modules.name,
           status: r.status,
+          slot:   r.sessions.intakes?.time_slot || null,
         }))
       )
     }
@@ -150,13 +153,13 @@ export default function StudentReport() {
     ws['B3'] = cell(studentName,     { font: { sz: 11 } })
 
     // Row 5 — Header row with emerald background
-    const headers = ['Date', 'Module', 'Attendance']
-    const cols    = ['A', 'B', 'C']
+    const headers = ['Date', 'Module', 'Time', 'Attendance']
+    const cols    = ['A', 'B', 'C', 'D']
     headers.forEach((h, ci) => {
       ws[`${cols[ci]}5`] = cell(h, {
         font:      { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
         fill:      { fgColor: { rgb: EMERALD } },
-        alignment: { horizontal: ci === 2 ? 'center' : 'left', vertical: 'center' },
+        alignment: { horizontal: ci >= 2 ? 'center' : 'left', vertical: 'center' },
         border:    allBorders,
       })
     })
@@ -166,6 +169,7 @@ export default function StudentReport() {
       const excelRow  = DATA_START + ri
       const isStripe  = ri % 2 === 1
       const status    = r.status.charAt(0).toUpperCase() + r.status.slice(1)
+      const slotLabel = r.slot ? r.slot.charAt(0).toUpperCase() + r.slot.slice(1) : '—'
       const rowBg     = isStripe ? STRIPE : 'FFFFFF'
 
       const baseStyle = (align = 'left') => ({
@@ -177,15 +181,16 @@ export default function StudentReport() {
 
       ws[`A${excelRow}`] = cell(formatDate(r.date), baseStyle())
       ws[`B${excelRow}`] = cell(r.module,            baseStyle())
-      ws[`C${excelRow}`] = cell(status,              baseStyle('center'))
+      ws[`C${excelRow}`] = cell(slotLabel,           baseStyle('center'))
+      ws[`D${excelRow}`] = cell(status,              baseStyle('center'))
     })
 
     // Sheet range
     const lastRow = DATA_START + rows.length - 1
-    ws['!ref']      = `A1:C${lastRow}`
-    ws['!cols']     = [{ wch: 20 }, { wch: 32 }, { wch: 16 }]
+    ws['!ref']      = `A1:D${lastRow}`
+    ws['!cols']     = [{ wch: 20 }, { wch: 32 }, { wch: 12 }, { wch: 16 }]
     ws['!rows']     = [{ hpt: 22 }, {}, { hpt: 18 }, {}, { hpt: 20 }]
-    ws['!autofilter'] = { ref: `A5:C${lastRow}` }
+    ws['!autofilter'] = { ref: `A5:D${lastRow}` }
 
     const wb = XLSXStyle.utils.book_new()
     XLSXStyle.utils.book_append_sheet(wb, ws, 'Attendance')
@@ -204,10 +209,11 @@ export default function StudentReport() {
     autoTable(doc, {
       startY: 24,
       margin: { top: 24 },        // leave room for the running header
-      head: [['Date', 'Module', 'Attendance']],
+      head: [['Date', 'Module', 'Time', 'Attendance']],
       body: filteredRecords.map(r => [
         formatDate(r.date),
         r.module,
+        r.slot ? r.slot.charAt(0).toUpperCase() + r.slot.slice(1) : '—',
         r.status.charAt(0).toUpperCase() + r.status.slice(1),
       ]),
       styles: { fontSize: 10, cellPadding: 4 },
@@ -216,7 +222,8 @@ export default function StudentReport() {
       columnStyles: {
         0: { cellWidth: 36 },
         1: { cellWidth: 'auto' },
-        2: { cellWidth: 30, halign: 'center' },
+        2: { cellWidth: 22, halign: 'center' },
+        3: { cellWidth: 26, halign: 'center' },
       },
     })
 
@@ -269,7 +276,10 @@ export default function StudentReport() {
       <header className="pt-8 pb-4 px-6">
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-400 tracking-wide uppercase">Asti</p>
-          <BatchSelector />
+          <div className="flex items-center gap-2">
+            <SlotBadge slot={activeBatch?.time_slot} />
+            <BatchSelector />
+          </div>
         </div>
         <h1 className="text-center text-2xl font-semibold text-gray-800 mt-4">
           Student Attendance
@@ -430,6 +440,9 @@ export default function StudentReport() {
                       Module
                     </th>
                     <th className="px-4 py-4 text-center font-semibold text-gray-500 uppercase tracking-wider text-xs border-b border-gray-100">
+                      Time
+                    </th>
+                    <th className="px-4 py-4 text-center font-semibold text-gray-500 uppercase tracking-wider text-xs border-b border-gray-100">
                       Attendance
                     </th>
                   </tr>
@@ -442,6 +455,9 @@ export default function StudentReport() {
                       </td>
                       <td className="px-4 py-4 text-gray-700 font-medium">
                         {r.module}
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <SlotBadge slot={r.slot} />
                       </td>
                       <td className="px-4 py-4 text-center">
                         <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full

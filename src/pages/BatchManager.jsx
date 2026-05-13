@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useBatch } from '../contexts/BatchContext'
+import SlotBadge from '../components/SlotBadge'
 
 export default function BatchManager() {
   const { activeBatch, setActiveBatch, refresh: refreshContext } = useBatch()
@@ -8,6 +9,7 @@ export default function BatchManager() {
   const [intakes, setIntakes] = useState([])
   const [studentMap, setStudentMap] = useState({}) // { intakeId: [{id, name}] }
   const [countMap, setCountMap] = useState({})     // { intakeId: number }
+  const [leavesMap, setLeavesMap] = useState({})   // { intakeId: [{id, date, reason}] }
   const [expandedId, setExpandedId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -15,6 +17,7 @@ export default function BatchManager() {
   // New batch form
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newSlot, setNewSlot] = useState('morning')
 
   // Inline rename
   const [renamingId, setRenamingId] = useState(null)
@@ -23,6 +26,11 @@ export default function BatchManager() {
   // Add student to intake
   const [addingToId, setAddingToId] = useState(null)
   const [newStudentName, setNewStudentName] = useState('')
+
+  // Add leave
+  const [addingLeaveToId, setAddingLeaveToId] = useState(null)
+  const [newLeaveDate, setNewLeaveDate] = useState('')
+  const [newLeaveReason, setNewLeaveReason] = useState('')
 
   // ── Data fetching ──────────────────────────────────────
 
@@ -65,6 +73,15 @@ export default function BatchManager() {
     setStudentMap(prev => ({ ...prev, [intakeId]: data || [] }))
   }, [])
 
+  const fetchLeavesForIntake = useCallback(async (intakeId) => {
+    const { data } = await supabase
+      .from('intake_leaves')
+      .select('id, date, reason')
+      .eq('intake_id', intakeId)
+      .order('date', { ascending: false })
+    setLeavesMap(prev => ({ ...prev, [intakeId]: data || [] }))
+  }, [])
+
   useEffect(() => {
     fetchIntakes()
   }, [fetchIntakes])
@@ -77,9 +94,8 @@ export default function BatchManager() {
       return
     }
     setExpandedId(intakeId)
-    if (!studentMap[intakeId]) {
-      fetchStudentsForIntake(intakeId)
-    }
+    if (!studentMap[intakeId]) fetchStudentsForIntake(intakeId)
+    if (!leavesMap[intakeId]) fetchLeavesForIntake(intakeId)
   }
 
   const handleCreateIntake = async (e) => {
@@ -88,7 +104,7 @@ export default function BatchManager() {
     setSaving(true)
     const { error } = await supabase
       .from('intakes')
-      .insert({ name: newName.trim(), is_active: false, is_archived: false })
+      .insert({ name: newName.trim(), time_slot: newSlot, is_active: false, is_archived: false })
     if (!error) {
       setNewName('')
       setShowNewForm(false)
@@ -109,6 +125,12 @@ export default function BatchManager() {
     setSaving(false)
   }
 
+  const handleChangeSlot = async (intakeId, slot) => {
+    await supabase.from('intakes').update({ time_slot: slot }).eq('id', intakeId)
+    setIntakes(prev => prev.map(b => b.id === intakeId ? { ...b, time_slot: slot } : b))
+    refreshContext()
+  }
+
   const handleArchive = async (intake) => {
     setSaving(true)
     const { error } = await supabase
@@ -117,7 +139,6 @@ export default function BatchManager() {
       .eq('id', intake.id)
 
     if (error) {
-      // is_archived column may not exist; just deactivate
       await supabase.from('intakes').update({ is_active: false }).eq('id', intake.id)
     }
 
@@ -192,10 +213,324 @@ export default function BatchManager() {
     setSaving(false)
   }
 
+  const handleAddLeave = async (e, intakeId) => {
+    e.preventDefault()
+    if (!newLeaveDate) return
+    const { error } = await supabase
+      .from('intake_leaves')
+      .insert({ intake_id: intakeId, date: newLeaveDate, reason: newLeaveReason.trim() || null })
+    if (error) {
+      if (error.code === '23505') alert('A non-class day is already recorded for this date.')
+      else alert('Failed to add non-class day: ' + error.message)
+      return
+    }
+    setNewLeaveDate('')
+    setNewLeaveReason('')
+    setAddingLeaveToId(null)
+    fetchLeavesForIntake(intakeId)
+  }
+
+  const handleDeleteLeave = async (leaveId, intakeId) => {
+    await supabase.from('intake_leaves').delete().eq('id', leaveId)
+    setLeavesMap(prev => ({
+      ...prev,
+      [intakeId]: (prev[intakeId] || []).filter(l => l.id !== leaveId),
+    }))
+  }
+
+  // ── Card renderer ─────────────────────────────────────
+
+  const renderCard = (intake) => {
+    const isExpanded = expandedId === intake.id
+    const isActive = intake.is_active || activeBatch?.id === intake.id
+    const students = studentMap[intake.id] || []
+    const count = countMap[intake.id] || 0
+    const isRenaming = renamingId === intake.id
+    const leaves = leavesMap[intake.id] || []
+    const activeIntakes = intakes.filter(b => !b.is_archived)
+
+    const formatLeaveDate = (d) =>
+      new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+
+    return (
+      <div key={intake.id} className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+        {/* Intake header row */}
+        <div className="flex items-center gap-3 px-4 py-3">
+          {/* Expand chevron */}
+          <button
+            onClick={() => handleExpand(intake.id)}
+            className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+            aria-label={isExpanded ? 'Collapse' : 'Expand'}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          {/* Name or rename input */}
+          {isRenaming ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleRename(intake.id)
+                if (e.key === 'Escape') { setRenamingId(null); setRenameValue('') }
+              }}
+              className="flex-1 border border-emerald-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+            />
+          ) : (
+            <span className="flex-1 flex items-center gap-1.5 min-w-0">
+              <span className="text-sm font-semibold text-gray-800 truncate">{intake.name}</span>
+              <SlotBadge slot={intake.time_slot} />
+            </span>
+          )}
+
+          {/* Student count */}
+          <span className="text-xs text-gray-400 shrink-0">{count} student{count !== 1 ? 's' : ''}</span>
+
+          {/* Active badge or Set Active button */}
+          {isActive ? (
+            <span className="shrink-0 bg-emerald-500 text-white text-xs font-semibold px-2.5 py-1 rounded-lg">Active</span>
+          ) : (
+            <button
+              onClick={() => handleSetActive(intake)}
+              disabled={saving}
+              className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Set Active
+            </button>
+          )}
+
+          {/* Action menu: Rename / Archive */}
+          {isRenaming ? (
+            <div className="flex gap-1 shrink-0">
+              <button
+                onClick={() => handleRename(intake.id)}
+                disabled={!renameValue.trim() || saving}
+                className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold disabled:opacity-50 hover:bg-emerald-700 transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => { setRenamingId(null); setRenameValue('') }}
+                className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-1 shrink-0">
+              <button
+                onClick={() => { setRenamingId(intake.id); setRenameValue(intake.name) }}
+                className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                title="Rename"
+              >
+                Rename
+              </button>
+              <button
+                onClick={() => handleArchive(intake)}
+                disabled={saving}
+                className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-red-50 hover:text-red-500 hover:border-red-200 disabled:opacity-50 transition-colors"
+                title="Archive batch"
+              >
+                Archive
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Expanded section */}
+        {isExpanded && (
+          <div className="border-t border-gray-100">
+            {/* Slot + settings row */}
+            <div className="flex items-center gap-3 px-5 py-2.5 border-b border-gray-50 bg-gray-50/50">
+              <span className="text-xs text-gray-400">Session time</span>
+              <select
+                value={intake.time_slot || 'morning'}
+                onChange={e => handleChangeSlot(intake.id, e.target.value)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400 cursor-pointer"
+              >
+                <option value="morning">Morning</option>
+                <option value="night">Night</option>
+              </select>
+            </div>
+
+            {/* Student list */}
+            {students.length === 0 && !studentMap[intake.id] ? (
+              <p className="text-xs text-gray-400 px-5 py-3">Loading…</p>
+            ) : students.length === 0 ? (
+              <p className="text-xs text-gray-400 italic px-5 py-4 text-center">No students in this batch.</p>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {students.map(student => (
+                  <div key={student.id} className="flex items-center gap-2 px-5 py-2.5 hover:bg-gray-50 group">
+                    <span className="text-sm text-gray-700 flex-1">{student.name}</span>
+                    {/* Move to dropdown */}
+                    {activeIntakes.filter(b => b.id !== intake.id).length > 0 && (
+                      <select
+                        defaultValue=""
+                        onChange={e => {
+                          if (e.target.value) {
+                            handleMoveStudent(student.id, e.target.value, intake.id)
+                            e.target.value = ''
+                          }
+                        }}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-500 bg-white opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity focus:outline-none focus:ring-1 focus:ring-emerald-400 cursor-pointer"
+                      >
+                        <option value="" disabled>Move to…</option>
+                        {activeIntakes
+                          .filter(b => b.id !== intake.id)
+                          .map(b => (
+                            <option key={b.id} value={b.id}>
+                              {b.time_slot === 'morning' ? '[M] ' : b.time_slot === 'night' ? '[N] ' : ''}{b.name}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                    {/* Graduate button */}
+                    <button
+                      onClick={() => handleGraduateStudent(student, intake.id)}
+                      className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200"
+                      title="Graduate student (removes from active lists)"
+                    >
+                      Graduate
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add student form */}
+            <div className="px-5 py-3 border-t border-gray-50">
+              {addingToId === intake.id ? (
+                <form onSubmit={e => handleAddStudent(e, intake.id)} className="flex gap-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Student name"
+                    value={newStudentName}
+                    onChange={e => setNewStudentName(e.target.value)}
+                    required
+                    className="flex-1 bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newStudentName.trim() || saving}
+                    className="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAddingToId(null); setNewStudentName('') }}
+                    className="border border-gray-200 text-gray-500 text-sm px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <button
+                  onClick={() => { setAddingToId(intake.id); setNewStudentName('') }}
+                  className="text-xs text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Add student to batch
+                </button>
+              )}
+            </div>
+
+            {/* Non-class days section */}
+            <div className="px-5 py-3 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Non-class days</p>
+
+              {leavesMap[intake.id] === undefined ? (
+                <p className="text-xs text-gray-300 italic">Loading…</p>
+              ) : leaves.length === 0 ? (
+                <p className="text-xs text-gray-300 italic mb-2">None recorded.</p>
+              ) : (
+                <div className="flex flex-col gap-1 mb-2">
+                  {leaves.map(leave => (
+                    <div key={leave.id} className="flex items-center gap-2 text-xs text-gray-600 group">
+                      <span className="font-medium text-gray-700">{formatLeaveDate(leave.date)}</span>
+                      {leave.reason && <span className="text-gray-400">— {leave.reason}</span>}
+                      <button
+                        onClick={() => handleDeleteLeave(leave.id, intake.id)}
+                        className="ml-auto opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all"
+                        title="Remove"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {addingLeaveToId === intake.id ? (
+                <form onSubmit={e => handleAddLeave(e, intake.id)} className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <input
+                      autoFocus
+                      type="date"
+                      value={newLeaveDate}
+                      onChange={e => setNewLeaveDate(e.target.value)}
+                      required
+                      className="flex-1 bg-gray-50 border border-gray-200 text-gray-800 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Reason (optional)"
+                      value={newLeaveReason}
+                      onChange={e => setNewLeaveReason(e.target.value)}
+                      className="flex-[2] bg-gray-50 border border-gray-200 text-gray-800 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 transition-colors"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={!newLeaveDate}
+                      className="bg-gray-900 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAddingLeaveToId(null); setNewLeaveDate(''); setNewLeaveReason('') }}
+                      className="border border-gray-200 text-gray-500 text-xs px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  onClick={() => { setAddingLeaveToId(intake.id); setNewLeaveDate(''); setNewLeaveReason('') }}
+                  className="text-xs text-gray-500 hover:text-gray-700 font-semibold flex items-center gap-1 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Add non-class day
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ── Render ─────────────────────────────────────────────
 
   const activeIntakes = intakes.filter(b => !b.is_archived)
   const archivedIntakes = intakes.filter(b => b.is_archived)
+  const morningActive = activeIntakes.filter(b => b.time_slot === 'morning')
+  const nightActive = activeIntakes.filter(b => b.time_slot === 'night')
+  const otherActive = activeIntakes.filter(b => !b.time_slot || (b.time_slot !== 'morning' && b.time_slot !== 'night'))
 
   if (loading) {
     return (
@@ -214,7 +549,7 @@ export default function BatchManager() {
           <p className="text-sm text-gray-500 mt-0.5">Manage student cohorts and batch assignments.</p>
         </div>
         <button
-          onClick={() => { setShowNewForm(v => !v); setNewName('') }}
+          onClick={() => { setShowNewForm(v => !v); setNewName(''); setNewSlot(activeBatch?.time_slot || 'morning') }}
           className="flex items-center gap-2 bg-emerald-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition-colors shadow-sm"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -238,6 +573,14 @@ export default function BatchManager() {
               required
               className="flex-1 bg-white border border-emerald-200 text-gray-800 text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 transition-colors"
             />
+            <select
+              value={newSlot}
+              onChange={e => setNewSlot(e.target.value)}
+              className="bg-white border border-emerald-200 text-gray-700 text-sm rounded-xl px-2 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer"
+            >
+              <option value="morning">Morning</option>
+              <option value="night">Night</option>
+            </select>
             <button
               type="submit"
               disabled={!newName.trim() || saving}
@@ -256,195 +599,26 @@ export default function BatchManager() {
         </div>
       )}
 
-      {/* Active batches list */}
+      {/* Active batches list — grouped by slot */}
       {activeIntakes.length === 0 && !showNewForm ? (
         <div className="text-center py-12 text-gray-400 text-sm">
           No batches yet. Create one to get started.
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {activeIntakes.map(intake => {
-            const isExpanded = expandedId === intake.id
-            const isActive = intake.is_active || activeBatch?.id === intake.id
-            const students = studentMap[intake.id] || []
-            const count = countMap[intake.id] || 0
-            const isRenaming = renamingId === intake.id
-
-            return (
-              <div key={intake.id} className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-                {/* Intake header row */}
-                <div className="flex items-center gap-3 px-4 py-3">
-                  {/* Expand chevron */}
-                  <button
-                    onClick={() => handleExpand(intake.id)}
-                    className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
-                    aria-label={isExpanded ? 'Collapse' : 'Expand'}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-
-                  {/* Name or rename input */}
-                  {isRenaming ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={e => setRenameValue(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') handleRename(intake.id)
-                        if (e.key === 'Escape') { setRenamingId(null); setRenameValue('') }
-                      }}
-                      className="flex-1 border border-emerald-300 rounded-lg px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                    />
-                  ) : (
-                    <span className="flex-1 text-sm font-semibold text-gray-800">{intake.name}</span>
-                  )}
-
-                  {/* Student count */}
-                  <span className="text-xs text-gray-400 shrink-0">{count} student{count !== 1 ? 's' : ''}</span>
-
-                  {/* Active badge or Set Active button */}
-                  {isActive ? (
-                    <span className="shrink-0 bg-emerald-500 text-white text-xs font-semibold px-2.5 py-1 rounded-lg">Active</span>
-                  ) : (
-                    <button
-                      onClick={() => handleSetActive(intake)}
-                      disabled={saving}
-                      className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-                    >
-                      Set Active
-                    </button>
-                  )}
-
-                  {/* Action menu: Rename / Archive */}
-                  {isRenaming ? (
-                    <div className="flex gap-1 shrink-0">
-                      <button
-                        onClick={() => handleRename(intake.id)}
-                        disabled={!renameValue.trim() || saving}
-                        className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold disabled:opacity-50 hover:bg-emerald-700 transition-colors"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => { setRenamingId(null); setRenameValue('') }}
-                        className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-1 shrink-0">
-                      <button
-                        onClick={() => { setRenamingId(intake.id); setRenameValue(intake.name) }}
-                        className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
-                        title="Rename"
-                      >
-                        Rename
-                      </button>
-                      <button
-                        onClick={() => handleArchive(intake)}
-                        disabled={saving}
-                        className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-red-50 hover:text-red-500 hover:border-red-200 disabled:opacity-50 transition-colors"
-                        title="Archive batch"
-                      >
-                        Archive
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Expanded: student list */}
-                {isExpanded && (
-                  <div className="border-t border-gray-100">
-                    {students.length === 0 && !studentMap[intake.id] ? (
-                      <p className="text-xs text-gray-400 px-5 py-3">Loading…</p>
-                    ) : students.length === 0 ? (
-                      <p className="text-xs text-gray-400 italic px-5 py-4 text-center">No students in this batch.</p>
-                    ) : (
-                      <div className="divide-y divide-gray-50">
-                        {students.map(student => (
-                          <div key={student.id} className="flex items-center gap-2 px-5 py-2.5 hover:bg-gray-50 group">
-                            <span className="text-sm text-gray-700 flex-1">{student.name}</span>
-                            {/* Move to dropdown */}
-                            {activeIntakes.filter(b => b.id !== intake.id).length > 0 && (
-                              <select
-                                defaultValue=""
-                                onChange={e => {
-                                  if (e.target.value) {
-                                    handleMoveStudent(student.id, e.target.value, intake.id)
-                                    e.target.value = ''
-                                  }
-                                }}
-                                className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-500 bg-white opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity focus:outline-none focus:ring-1 focus:ring-emerald-400 cursor-pointer"
-                              >
-                                <option value="" disabled>Move to…</option>
-                                {activeIntakes
-                                  .filter(b => b.id !== intake.id)
-                                  .map(b => (
-                                    <option key={b.id} value={b.id}>{b.name}</option>
-                                  ))}
-                              </select>
-                            )}
-                            {/* Graduate button */}
-                            <button
-                              onClick={() => handleGraduateStudent(student, intake.id)}
-                              className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200"
-                              title="Graduate student (removes from active lists)"
-                            >
-                              Graduate
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Add student form */}
-                    <div className="px-5 py-3 border-t border-gray-50">
-                      {addingToId === intake.id ? (
-                        <form onSubmit={e => handleAddStudent(e, intake.id)} className="flex gap-2">
-                          <input
-                            autoFocus
-                            type="text"
-                            placeholder="Student name"
-                            value={newStudentName}
-                            onChange={e => setNewStudentName(e.target.value)}
-                            required
-                            className="flex-1 bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 transition-colors"
-                          />
-                          <button
-                            type="submit"
-                            disabled={!newStudentName.trim() || saving}
-                            className="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
-                          >
-                            Add
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setAddingToId(null); setNewStudentName('') }}
-                            className="border border-gray-200 text-gray-500 text-sm px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </form>
-                      ) : (
-                        <button
-                          onClick={() => { setAddingToId(intake.id); setNewStudentName('') }}
-                          className="text-xs text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1 transition-colors"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                          </svg>
-                          Add student to batch
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {morningActive.length > 0 && (
+            <>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-1">Morning</p>
+              {morningActive.map(renderCard)}
+            </>
+          )}
+          {nightActive.length > 0 && (
+            <>
+              <p className={`text-xs font-semibold text-gray-400 uppercase tracking-wider px-1 ${morningActive.length > 0 ? 'mt-2' : ''}`}>Night</p>
+              {nightActive.map(renderCard)}
+            </>
+          )}
+          {otherActive.map(renderCard)}
         </div>
       )}
 
